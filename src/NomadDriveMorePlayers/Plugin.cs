@@ -22,7 +22,7 @@ namespace NomadDriveMorePlayers
     {
         public const string Guid = "com.nunod87.nomaddrive.moreplayers";
         public const string Name = "Nomad Drive More Players";
-        public const string Version = "0.1.1";
+        public const string Version = "0.1.2";
 
         internal const int GameDefault = 4;
         internal const int RecommendedMax = 8;
@@ -73,8 +73,11 @@ namespace NomadDriveMorePlayers
                 TryPatch(asm);
 
             // Force-load the networking assembly so we do not depend on load order.
-            try { Assembly.Load("EvilCore.Networking"); }
-            catch (Exception e) { Log.LogWarning("Could not preload EvilCore.Networking: " + e.Message); }
+            foreach (var name in new[] { "EvilCore.Networking", "com.Epic.OnlineServices", "Epic.OnlineServices" })
+            {
+                try { Assembly.Load(name);  }
+                catch (Exception e) { if (VerboseLog.Value) Log.LogInfo("Could not preload " + name + ": " + e.Message); }
+            }
 
             Log.LogInfo(Name + " " + Version + " loaded. Target max players: " + MaxPlayers.Value);
         }
@@ -83,16 +86,60 @@ namespace NomadDriveMorePlayers
         {
             string asmName;
             try { asmName = asm.GetName().Name; } catch { return; }
-            if (asmName != "EvilCore.Networking" || !_patched.Add(asmName)) return;
+
+            bool isNet = asmName == "EvilCore.Networking";
+            bool isEos = asmName.EndsWith("Epic.OnlineServices", StringComparison.OrdinalIgnoreCase);
+            if (!(isNet || isEos) || !_patched.Add(asmName)) return;
 
             try
             {
-                PatchLobbyOptions(asm);
-                PatchMirrorManager(asm);
+                if (isNet)
+                {
+                    PatchLobbyOptions(asm);
+                    PatchMirrorManager(asm);
+                }
+                else
+                {
+                    PatchEosSdk(asm);
+                }
             }
             catch (Exception e)
             {
                 Log.LogError("Patching failed: " + e);
+            }
+        }
+
+        // ---- 0. Final choke point: the EOS SDK call that actually creates the lobby ------
+
+        private void PatchEosSdk(Assembly asm)
+        {
+            var optType = asm.GetType("Epic.OnlineServices.Lobby.CreateLobbyOptions");
+            var setter = optType?.GetProperty("MaxLobbyMembers")?.GetSetMethod(true);
+            if (setter == null)
+            {
+                Log.LogWarning("Epic.OnlineServices.Lobby.CreateLobbyOptions.MaxLobbyMembers setter not found.");
+                return;
+            }
+
+            _harmony.Patch(setter, prefix: new HarmonyMethod(typeof(Plugin).GetMethod(
+                nameof(MaxLobbyMembersPrefix), BindingFlags.Static | BindingFlags.NonPublic)));
+            Log.LogInfo("Patched EOS CreateLobbyOptions.MaxLobbyMembers (final lobby size).");
+        }
+
+        private static void MaxLobbyMembersPrefix(ref uint value)
+        {
+            try
+            {
+                Log.LogInfo("EOS lobby MaxLobbyMembers requested: " + value);
+                if (value < GameDefault) return; // 1 = single player, below 4 = player picked fewer
+                uint target = (uint)MaxPlayers.Value;
+                if (value == target) return;
+                Log.LogInfo("EOS lobby MaxLobbyMembers " + value + " -> " + target);
+                value = target;
+            }
+            catch (Exception e)
+            {
+                Log.LogError("MaxLobbyMembersPrefix: " + e);
             }
         }
 
@@ -130,9 +177,35 @@ namespace NomadDriveMorePlayers
                 }
             }
 
+            var parse = lobbyType.GetMethod("ParseLobbyDetails",
+                BindingFlags.Instance | BindingFlags.Static | BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.DeclaredOnly);
+            if (parse != null)
+            {
+                try
+                {
+                    _harmony.Patch(parse, postfix: new HarmonyMethod(typeof(Plugin).GetMethod(
+                        nameof(ParsePostfix), BindingFlags.Static | BindingFlags.NonPublic)));
+                }
+                catch (Exception e) { Log.LogWarning("Could not patch ParseLobbyDetails: " + e.Message); }
+            }
+
             Log.LogInfo("Lobby size: patched " + count + " method(s) on EOSLobbyManager.");
             if (count == 0)
                 Log.LogError("No method taking LobbyCreateOptions found. The game build probably changed.");
+        }
+
+        // Logs what a lobby advertises (MemberCount / MaxMembers), on host and client.
+        private static void ParsePostfix(object __result)
+        {
+            try
+            {
+                if (__result == null) return;
+                var t = __result.GetType();
+                var max = t.GetField("MaxMembers")?.GetValue(__result);
+                var cnt = t.GetField("MemberCount")?.GetValue(__result);
+                Log.LogInfo("Lobby details: MemberCount=" + cnt + " MaxMembers=" + max);
+            }
+            catch { }
         }
 
         // Rewrites LobbyCreateOptions.MaxPlayers in the arguments before the game uses them.
