@@ -34,18 +34,42 @@ jobs:
           (cd pkg && zip -r "../NomadDriveMorePlayers-${VERSION}.zip" BepInEx)
           echo "ZIP=NomadDriveMorePlayers-${VERSION}.zip" >> "$GITHUB_ENV"
 
+      # One-zip install for players: BepInEx 5.4.23.5 + unstripped Unity corlibs + this plugin.
+      # The game's mscorlib is stripped (no Module.GetPEKind), which BepInEx needs. The corlibs
+      # live in BepInEx/unstripped_corlibs and doorstop points Mono at them, so no game file is changed.
+      - name: Package all-in-one
+        run: |
+          VERSION="${GITHUB_REF_NAME}"
+          [[ "$GITHUB_REF" == refs/tags/* ]] || VERSION="dev-${GITHUB_SHA::7}"
+          BEPINEX_VER=5.4.23.5
+          UNITY_VER=6000.0.73
+          mkdir -p aio && cd aio
+          curl -fsSL -o bepinex.zip "https://github.com/BepInEx/BepInEx/releases/download/v${BEPINEX_VER}/BepInEx_win_x64_${BEPINEX_VER}.zip"
+          curl -fsSL -o corlibs.zip "https://unity.bepinex.dev/corlibs/${UNITY_VER}.zip"
+          unzip -q bepinex.zip
+          mkdir -p BepInEx/unstripped_corlibs && unzip -q corlibs.zip -d BepInEx/unstripped_corlibs
+          test -f BepInEx/unstripped_corlibs/mscorlib.dll
+          sed -i 's|^dll_search_path_override =.*|dll_search_path_override = BepInEx\\unstripped_corlibs\r|' doorstop_config.ini
+          grep -q 'unstripped_corlibs' doorstop_config.ini
+          rm bepinex.zip corlibs.zip
+          cp -r ../pkg/BepInEx/plugins BepInEx/
+          zip -rq "../NomadDriveMorePlayers-AllInOne-${VERSION}.zip" .
+          echo "AIO_ZIP=NomadDriveMorePlayers-AllInOne-${VERSION}.zip" >> "$GITHUB_ENV"
+
       - uses: actions/upload-artifact@v4
         with:
           name: NomadDriveMorePlayers
-          path: ${{ env.ZIP }}
+          path: |
+            ${{ env.ZIP }}
+            ${{ env.AIO_ZIP }}
 
       - name: Release
         if: startsWith(github.ref, 'refs/tags/v')
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          NOTES="Automated build of ${GITHUB_REF_NAME}. See README for install steps and known limits."
+          NOTES="Automated build of ${GITHUB_REF_NAME}. Download the AllInOne zip and extract it next to the game .exe (includes BepInEx and the fixes the game needs). The plain zip is the plugin only, for people who already have a working BepInEx. See README."
           FLAGS=""
           # Pre-1.0 builds are untested in-game: mark them as pre-releases.
           [[ "$GITHUB_REF_NAME" == v0.* ]] && FLAGS="--prerelease"
-          gh release create "$GITHUB_REF_NAME" "$ZIP" --title "$GITHUB_REF_NAME" --notes "$NOTES" $FLAGS
+          gh release create "$GITHUB_REF_NAME" "$AIO_ZIP" "$ZIP" --title "$GITHUB_REF_NAME" --notes "$NOTES" $FLAGS

@@ -8,10 +8,21 @@ BepInEx plugin that raises the co-op player limit in **Nomad Drive** (ships with
 
 ## Install
 
-1. Install **BepInEx 5.4.x, x64** (Mono) into the game folder: https://github.com/BepInEx/BepInEx/releases
-2. Run the game once so BepInEx creates its folders, then close it.
-3. Unzip this mod's release into the game folder (it contains `BepInEx/plugins/NomadDriveMorePlayers/`).
-4. Start the game, host a lobby. Check `BepInEx/LogOutput.log` for lines like `Lobby MaxPlayers 4 -> 6`.
+**Easy way (recommended):** download `NomadDriveMorePlayers-AllInOne-<version>.zip` from Releases and extract it
+into the game folder, next to the game `.exe`. Launch the game from Steam. Done.
+
+It contains BepInEx 5.4.23.5, a set of unstripped Unity core libraries (see below) and this plugin.
+No game file is modified.
+
+Check `BepInEx/LogOutput.log` for lines like `Lobby MaxPlayers 4 -> 6`.
+
+**Why the extra files?** The game is Unity 6000.0.73 and its `mscorlib.dll` is stripped (it lacks
+`Module.GetPEKind`), so BepInEx crashes on start with no log. Both BepInEx 5 and 6 need that method, so a different
+BepInEx version does not help. The zip ships the matching unstripped libraries in `BepInEx/unstripped_corlibs` and
+`doorstop_config.ini` points Mono at them.
+
+**Manual way:** if you already have a working BepInEx 5, use the plain `NomadDriveMorePlayers-<version>.zip`.
+It only contains the plugin.
 
 ## Config
 
