@@ -203,7 +203,6 @@ Project Link: [https://github.com/NunoD87/NomadDrive-MorePlayers](https://github
 * [BepInEx](https://github.com/BepInEx/BepInEx) and [HarmonyX](https://github.com/BepInEx/HarmonyX)
 * [BepInExPack_NomadDrive](https://www.nexusmods.com/nomaddrive/mods/7) for the game-ready BepInEx setup
 * [UnityDataMiner corlibs](https://unity.bepinex.dev/corlibs/) for the unstripped Unity libraries
-* [Best-README-Template](https://github.com/othneildrew/Best-README-Template)
 * Indie Devil, for making Nomad Drive
 
 <p align="right">(<a href="#readme-top">back to top</a>)</p>
