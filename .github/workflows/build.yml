@@ -43,6 +43,7 @@ jobs:
           [[ "$GITHUB_REF" == refs/tags/* ]] || VERSION="dev-${GITHUB_SHA::7}"
           BEPINEX_VER=5.4.23.5
           UNITY_VER=6000.0.73
+          ROOT="$PWD"
           mkdir -p aio && cd aio
           curl -fsSL -o bepinex.zip "https://github.com/BepInEx/BepInEx/releases/download/v${BEPINEX_VER}/BepInEx_win_x64_${BEPINEX_VER}.zip"
           curl -fsSL -o corlibs.zip "https://unity.bepinex.dev/corlibs/${UNITY_VER}.zip"
@@ -52,8 +53,9 @@ jobs:
           sed -i 's|^dll_search_path_override =.*|dll_search_path_override = BepInEx\\unstripped_corlibs\r|' doorstop_config.ini
           grep -q 'unstripped_corlibs' doorstop_config.ini
           rm bepinex.zip corlibs.zip
-          cp -r ../pkg/BepInEx/plugins BepInEx/
-          zip -rq "../NomadDriveMorePlayers-AllInOne-${VERSION}.zip" .
+          cp -r "$ROOT/pkg/BepInEx/plugins" BepInEx/
+          zip -rq "$ROOT/NomadDriveMorePlayers-AllInOne-${VERSION}.zip" .
+          ls -la "$ROOT"/*.zip
           echo "AIO_ZIP=NomadDriveMorePlayers-AllInOne-${VERSION}.zip" >> "$GITHUB_ENV"
 
       - uses: actions/upload-artifact@v4
