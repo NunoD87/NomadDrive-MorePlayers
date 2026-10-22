@@ -2,7 +2,7 @@
 
 BepInEx plugin that raises the co-op player limit in **Nomad Drive** (ships with 4).
 
-- Default **6** players, up to **8 recommended**, configurable up to **12** (untested).
+- Pick the player count **in game**: the Create Game player slider now goes above 4 (default start 6, top 8 recommended, up to 12 via config, untested).
 - Built from reading the playtest assemblies. Game code is reached by reflection, so no game files are in this repo.
 - Status: **v0.x = not yet tested in game.** Reports welcome in Issues.
 
@@ -17,16 +17,19 @@ This is the plugin only. Nomad Drive needs two things before any BepInEx mod can
    version, use the matching `https://unity.bepinex.dev/corlibs/<version>.zip`.
 3. Unzip this mod's release into the game folder (it contains `BepInEx/plugins/NomadDriveMorePlayers/`).
 
-Check `BepInEx/LogOutput.log` for `Lobby MaxPlayers 4 -> 6` and `Mirror maxConnections 4 -> 6`.
+Check `BepInEx/LogOutput.log` for `Create Game slider range 1..8` and `Mirror maxConnections 4 -> 8`.
 
 ## Config
+
+Players are chosen in game with the slider on the **Create Game** screen. The config file only holds the slider limits.
 
 `BepInEx/config/com.nunod87.nomaddrive.moreplayers.cfg` (created on first run)
 
 | Key | Default | Meaning |
 |---|---|---|
 | `Enabled` | true | Switch the mod off without uninstalling |
-| `MaxPlayers` | 6 | Lobby size, host included. 2 to 12 |
+| `SliderMaxPlayers` | 8 | Top of the slider, host included. 4 to 12. Above 8 is untested |
+| `DefaultPlayers` | 6 | Where the slider starts, and the lobby size when a lobby is made without the slider (e.g. turning a single-player world into multiplayer) |
 | `VerboseLog` | false | Log every patched call |
 
 ## Who needs it

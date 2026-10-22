@@ -6,15 +6,16 @@ using BepInEx;
 using BepInEx.Configuration;
 using BepInEx.Logging;
 using HarmonyLib;
+using UnityEngine;
 
 namespace NomadDriveMorePlayers
 {
     /// <summary>
-    /// Raises the Nomad Drive co-op player limit.
-    ///
-    /// Two places enforce the limit (found by reading the playtest assemblies):
-    ///   1. EvilCore.Networking.LobbyCreateOptions.MaxPlayers -> EOS lobby MaxLobbyMembers.
-    ///   2. Mirror NetworkManager.maxConnections -> EOS transport rejects joins when full.
+    /// Raises the Nomad Drive co-op player limit. Found by reading the playtest assemblies:
+    ///   1. Create Game panel: the player-count slider is clamped to 4 in two places
+    ///      (CreateGamePanel.ConfigureMultiplayerSelectors and CreateGamePanel.PartySize).
+    ///   2. LobbyCreateOptions.MaxPlayers -> EOS lobby MaxLobbyMembers (the real lobby size).
+    ///   3. Mirror NetworkManager.maxConnections -> the EOS transport rejects joins when full.
     /// Game types are reached through reflection so the plugin builds without game DLLs.
     /// </summary>
     [BepInPlugin(Guid, Name, Version)]
@@ -22,7 +23,7 @@ namespace NomadDriveMorePlayers
     {
         public const string Guid = "com.nunod87.nomaddrive.moreplayers";
         public const string Name = "Nomad Drive More Players";
-        public const string Version = "0.1.2";
+        public const string Version = "0.2.0";
 
         internal const int GameDefault = 4;
         internal const int RecommendedMax = 8;
@@ -30,8 +31,13 @@ namespace NomadDriveMorePlayers
 
         internal static ManualLogSource Log;
         internal static ConfigEntry<bool> Enabled;
-        internal static ConfigEntry<int> MaxPlayers;
+        internal static ConfigEntry<int> SliderMax;
+        internal static ConfigEntry<int> DefaultPlayers;
         internal static ConfigEntry<bool> VerboseLog;
+
+        // Last value the Create Game slider produced, so the lobby patches do not override a player's own pick.
+        private static int _uiPick;
+        private static float _uiPickTime = -1000f;
 
         private Harmony _harmony;
         private readonly HashSet<string> _patched = new HashSet<string>();
@@ -43,13 +49,19 @@ namespace NomadDriveMorePlayers
             Enabled = Config.Bind("General", "Enabled", true,
                 "Turn the mod on or off without uninstalling it.");
 
-            MaxPlayers = Config.Bind("General", "MaxPlayers", 6,
+            SliderMax = Config.Bind("General", "SliderMaxPlayers", RecommendedMax,
                 new ConfigDescription(
-                    "Maximum players in a co-op lobby (host included). The game ships with 4. " +
-                    "Up to " + RecommendedMax + " is recommended: the game's own loot/economy scaling " +
-                    "is clamped to " + RecommendedMax + ". " + (RecommendedMax + 1) + "-" + HardMax +
-                    " is allowed but untested and may cause missing seats, spawn problems or lag. " +
-                    "Only the host needs to set this.",
+                    "Top of the player-count slider on the Create Game screen (host included). The game ships with 4. " +
+                    "Pick the actual number in game with the slider. Up to " + RecommendedMax + " is recommended: " +
+                    "the game's loot/economy scaling is clamped to " + RecommendedMax + ". " + (RecommendedMax + 1) +
+                    "-" + HardMax + " is allowed but untested (missing seats, spawn problems, lag). " +
+                    "Only the host needs this mod.",
+                    new AcceptableValueRange<int>(GameDefault, HardMax)));
+
+            DefaultPlayers = Config.Bind("General", "DefaultPlayers", 6,
+                new ConfigDescription(
+                    "Where the slider starts, and the lobby size used when a lobby is created without the slider " +
+                    "(for example turning a single-player world into multiplayer). Capped by SliderMaxPlayers.",
                     new AcceptableValueRange<int>(2, HardMax)));
 
             VerboseLog = Config.Bind("Debug", "VerboseLog", false,
@@ -61,8 +73,8 @@ namespace NomadDriveMorePlayers
                 return;
             }
 
-            if (MaxPlayers.Value > RecommendedMax)
-                Log.LogWarning("MaxPlayers=" + MaxPlayers.Value + " is above the recommended " +
+            if (SliderMax.Value > RecommendedMax)
+                Log.LogWarning("SliderMaxPlayers=" + SliderMax.Value + " is above the recommended " +
                                RecommendedMax + ". Untested territory.");
 
             _harmony = new Harmony(Guid);
@@ -72,14 +84,20 @@ namespace NomadDriveMorePlayers
             foreach (var asm in AppDomain.CurrentDomain.GetAssemblies())
                 TryPatch(asm);
 
-            // Force-load the networking assembly so we do not depend on load order.
-            foreach (var name in new[] { "EvilCore.Networking", "com.Epic.OnlineServices", "Epic.OnlineServices" })
+            // Force-load the assemblies we patch so we do not depend on load order.
+            foreach (var name in new[] { "EvilCore.Networking", "EvilCore.UI", "com.Epic.OnlineServices", "Epic.OnlineServices" })
             {
-                try { Assembly.Load(name);  }
+                try { Assembly.Load(name); }
                 catch (Exception e) { if (VerboseLog.Value) Log.LogInfo("Could not preload " + name + ": " + e.Message); }
             }
 
-            Log.LogInfo(Name + " " + Version + " loaded. Target max players: " + MaxPlayers.Value);
+            Log.LogInfo(Name + " " + Version + " loaded. Slider max: " + SliderMax.Value +
+                        ", default: " + EffectiveDefault());
+        }
+
+        private static int EffectiveDefault()
+        {
+            return Math.Min(DefaultPlayers.Value, SliderMax.Value);
         }
 
         private void TryPatch(Assembly asm)
@@ -88,28 +106,134 @@ namespace NomadDriveMorePlayers
             try { asmName = asm.GetName().Name; } catch { return; }
 
             bool isNet = asmName == "EvilCore.Networking";
+            bool isUi = asmName == "EvilCore.UI";
             bool isEos = asmName.EndsWith("Epic.OnlineServices", StringComparison.OrdinalIgnoreCase);
-            if (!(isNet || isEos) || !_patched.Add(asmName)) return;
+            if (!(isNet || isUi || isEos) || !_patched.Add(asmName)) return;
 
             try
             {
-                if (isNet)
-                {
-                    PatchLobbyOptions(asm);
-                    PatchMirrorManager(asm);
-                }
-                else
-                {
-                    PatchEosSdk(asm);
-                }
+                if (isNet) { PatchLobbyOptions(asm); PatchMirrorManager(asm); }
+                else if (isUi) PatchCreateGamePanel(asm);
+                else PatchEosSdk(asm);
             }
             catch (Exception e)
             {
-                Log.LogError("Patching failed: " + e);
+                Log.LogError("Patching failed for " + asmName + ": " + e);
             }
         }
 
-        // ---- 0. Final choke point: the EOS SDK call that actually creates the lobby ------
+        // ---- Create Game slider ----------------------------------------------------------
+
+        private void PatchCreateGamePanel(Assembly asm)
+        {
+            var panel = asm.GetType("EvilCore.UI.MainMenu.Panels.CreateGamePanel");
+            if (panel == null)
+            {
+                Log.LogError("CreateGamePanel not found. Game version changed?");
+                return;
+            }
+
+            const BindingFlags flags = BindingFlags.Instance | BindingFlags.Public |
+                                       BindingFlags.NonPublic | BindingFlags.DeclaredOnly;
+
+            var configure = panel.GetMethod("ConfigureMultiplayerSelectors", flags);
+            var partySize = panel.GetMethod("PartySize", flags);
+            if (configure == null || partySize == null)
+            {
+                Log.LogError("CreateGamePanel.ConfigureMultiplayerSelectors/PartySize not found. Game version changed?");
+                return;
+            }
+
+            _harmony.Patch(configure, postfix: new HarmonyMethod(typeof(Plugin).GetMethod(
+                nameof(ConfigureSelectorsPostfix), BindingFlags.Static | BindingFlags.NonPublic)));
+            _harmony.Patch(partySize, postfix: new HarmonyMethod(typeof(Plugin).GetMethod(
+                nameof(PartySizePostfix), BindingFlags.Static | BindingFlags.NonPublic)));
+            Log.LogInfo("Create Game slider: patched (max " + SliderMax.Value + ").");
+        }
+
+        // The game sets the slider range to 1..min(MaxConnections, 4). Re-apply it with our max.
+        private static void ConfigureSelectorsPostfix(object __instance)
+        {
+            try
+            {
+                var sel = GetField(__instance, "maxPlayersSelector");
+                if (sel == null) return; // single-player layout has no selector
+
+                var t = sel.GetType();
+                var setRange = t.GetMethods(BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic)
+                    .FirstOrDefault(m => m.Name == "SetRange" && m.GetParameters().Length == 5);
+                if (setRange == null) { Log.LogError("OptionSelector.SetRange(5 args) not found."); return; }
+
+                float min = Convert.ToSingle(GetField(sel, "_rangeMin") ?? 1f);
+                float step = Convert.ToSingle(GetField(sel, "_rangeStep") ?? 1f);
+                object suffix = GetField(sel, "_rangeSuffix") ?? "";
+                object decimals = GetField(sel, "_rangeDecimals") ?? 0;
+
+                var ps = setRange.GetParameters();
+                var args = new object[]
+                {
+                    Convert.ChangeType(min, ps[0].ParameterType),
+                    Convert.ChangeType((float)SliderMax.Value, ps[1].ParameterType),
+                    Convert.ChangeType(step, ps[2].ParameterType),
+                    suffix,
+                    Convert.ChangeType(decimals, ps[4].ParameterType),
+                };
+                setRange.Invoke(sel, args);
+
+                var setValue = t.GetMethod("SetRangeValueWithoutNotify",
+                    BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic);
+                setValue?.Invoke(sel, new object[] { (float)EffectiveDefault() });
+
+                Log.LogInfo("Create Game slider range 1.." + SliderMax.Value + ", starts at " + EffectiveDefault() + ".");
+            }
+            catch (Exception e)
+            {
+                Log.LogError("ConfigureSelectorsPostfix: " + e);
+            }
+        }
+
+        // The game clamps the picked value to 1..4 again when it builds the lobby options.
+        private static void PartySizePostfix(object __instance, ref int __result)
+        {
+            try
+            {
+                if (!(GetField(__instance, "multiplayerMode") is bool mp) || !mp) return;
+                var sel = GetField(__instance, "maxPlayersSelector");
+                if (sel == null) return;
+
+                var prop = sel.GetType().GetProperty("RangeValue",
+                    BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic);
+                if (prop == null) return;
+
+                int picked = (int)Math.Round(Convert.ToSingle(prop.GetValue(sel, null)));
+                picked = Math.Max(1, Math.Min(SliderMax.Value, picked));
+                if (picked != __result)
+                    Log.LogInfo("Party size from slider: " + __result + " -> " + picked);
+
+                __result = picked;
+                _uiPick = picked;
+                _uiPickTime = Time.realtimeSinceStartup;
+            }
+            catch (Exception e)
+            {
+                Log.LogError("PartySizePostfix: " + e);
+            }
+        }
+
+        private static object GetField(object o, string name)
+        {
+            if (o == null) return null;
+            var f = AccessTools.Field(o.GetType(), name);
+            return f?.GetValue(o);
+        }
+
+        // True when this lobby size is the number the host just picked on the slider.
+        private static bool IsFromSlider(long value)
+        {
+            return _uiPick > 0 && value == _uiPick && Time.realtimeSinceStartup - _uiPickTime < 120f;
+        }
+
+        // ---- Final lobby size: the EOS SDK call that actually creates the lobby -----------
 
         private void PatchEosSdk(Assembly asm)
         {
@@ -131,10 +255,11 @@ namespace NomadDriveMorePlayers
             try
             {
                 Log.LogInfo("EOS lobby MaxLobbyMembers requested: " + value);
-                if (value < GameDefault) return; // 1 = single player, below 4 = player picked fewer
-                uint target = (uint)MaxPlayers.Value;
+                if (value < GameDefault) return;       // single player, or the host picked fewer
+                if (IsFromSlider(value)) return;       // the host chose this on the slider
+                uint target = (uint)EffectiveDefault();
                 if (value == target) return;
-                Log.LogInfo("EOS lobby MaxLobbyMembers " + value + " -> " + target);
+                Log.LogInfo("EOS lobby MaxLobbyMembers " + value + " -> " + target + " (no slider pick)");
                 value = target;
             }
             catch (Exception e)
@@ -143,7 +268,7 @@ namespace NomadDriveMorePlayers
             }
         }
 
-        // ---- 1. Lobby size -------------------------------------------------------------
+        // ---- LobbyCreateOptions.MaxPlayers (earlier in the same chain) -------------------
 
         private void PatchLobbyOptions(Assembly asm)
         {
@@ -177,8 +302,7 @@ namespace NomadDriveMorePlayers
                 }
             }
 
-            var parse = lobbyType.GetMethod("ParseLobbyDetails",
-                BindingFlags.Instance | BindingFlags.Static | BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.DeclaredOnly);
+            var parse = lobbyType.GetMethod("ParseLobbyDetails", flags | BindingFlags.Static);
             if (parse != null)
             {
                 try
@@ -208,8 +332,8 @@ namespace NomadDriveMorePlayers
             catch { }
         }
 
-        // Rewrites LobbyCreateOptions.MaxPlayers in the arguments before the game uses them.
-        // __args lets us replace boxed struct arguments without compile-time access to the type.
+        // Rewrites LobbyCreateOptions.MaxPlayers in the arguments before the game uses them,
+        // unless the host picked the number on the slider.
         private static void LobbyOptionsPrefix(object[] __args)
         {
             try
@@ -223,25 +347,23 @@ namespace NomadDriveMorePlayers
                         BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic);
                     if (field == null) continue;
 
-                    // The game declares MaxPlayers as uint (it feeds EOS MaxLobbyMembers), so do not
-                    // assume int. Convert both ways.
+                    // The game declares MaxPlayers as uint, so do not assume int.
                     long current;
                     try { current = Convert.ToInt64(field.GetValue(arg)); }
                     catch { continue; }
 
-                    // Always log what the game asks for: it tells us the real value the host menu uses.
-                    Log.LogInfo("Lobby create requested MaxPlayers=" + current +
-                                " (field type " + field.FieldType.Name + ")");
+                    if (VerboseLog.Value)
+                        Log.LogInfo("Lobby create requested MaxPlayers=" + current + " (" + field.FieldType.Name + ")");
 
-                    // 1 = single player, anything below the game's cap = the player chose fewer.
-                    if (current < GameDefault) continue;
+                    if (current < GameDefault) continue;   // single player, or the host picked fewer
+                    if (IsFromSlider(current)) continue;   // the host chose this on the slider
 
-                    int target = MaxPlayers.Value;
+                    int target = EffectiveDefault();
                     if (current == target) continue;
 
-                    field.SetValue(arg, Convert.ChangeType(target, field.FieldType)); // arg is the boxed copy for structs
+                    field.SetValue(arg, Convert.ChangeType(target, field.FieldType)); // arg is the boxed copy
                     __args[i] = arg;
-                    Log.LogInfo("Lobby MaxPlayers " + current + " -> " + target);
+                    Log.LogInfo("Lobby MaxPlayers " + current + " -> " + target + " (no slider pick)");
                 }
             }
             catch (Exception e)
@@ -250,7 +372,7 @@ namespace NomadDriveMorePlayers
             }
         }
 
-        // ---- 2. Mirror connection cap --------------------------------------------------
+        // ---- Mirror connection cap --------------------------------------------------------
 
         private void PatchMirrorManager(Assembly asm)
         {
@@ -274,6 +396,7 @@ namespace NomadDriveMorePlayers
             }
         }
 
+        // Mirror only needs to be at least as high as the biggest lobby, so use the slider max.
         private static void MirrorPostfix(object __instance)
         {
             try
@@ -282,7 +405,7 @@ namespace NomadDriveMorePlayers
                 if (field == null || field.FieldType != typeof(int)) return;
 
                 int current = (int)field.GetValue(__instance);
-                int target = MaxPlayers.Value;
+                int target = SliderMax.Value;
                 // <2 is a single-player session; >=target is already high enough (Mirror default is 100).
                 if (current < 2 || current >= target) return;
 
