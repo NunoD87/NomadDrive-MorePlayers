@@ -44,7 +44,7 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          NOTES="Automated build of ${GITHUB_REF_NAME}. Plugin only: needs BepInEx 5.4.23.5 and the unstripped corlibs fix, see the README."
+          NOTES="Automated build of ${GITHUB_REF_NAME}. Plugin only. Install BepInExPack_NomadDrive first (https://www.nexusmods.com/nomaddrive/mods/7), then unzip this into the game folder. See the README."
           FLAGS=""
           # Pre-1.0 builds are untested in-game: mark them as pre-releases.
           [[ "$GITHUB_REF_NAME" == v0.* ]] && FLAGS="--prerelease"
