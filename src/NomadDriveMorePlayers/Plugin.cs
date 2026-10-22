@@ -22,7 +22,7 @@ namespace NomadDriveMorePlayers
     {
         public const string Guid = "com.nunod87.nomaddrive.moreplayers";
         public const string Name = "Nomad Drive More Players";
-        public const string Version = "0.1.0";
+        public const string Version = "0.1.1";
 
         internal const int GameDefault = 4;
         internal const int RecommendedMax = 8;
@@ -148,16 +148,25 @@ namespace NomadDriveMorePlayers
 
                     var field = arg.GetType().GetField("MaxPlayers",
                         BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic);
-                    if (field == null || field.FieldType != typeof(int)) continue;
+                    if (field == null) continue;
 
-                    int current = (int)field.GetValue(arg);
+                    // The game declares MaxPlayers as uint (it feeds EOS MaxLobbyMembers), so do not
+                    // assume int. Convert both ways.
+                    long current;
+                    try { current = Convert.ToInt64(field.GetValue(arg)); }
+                    catch { continue; }
+
+                    // Always log what the game asks for: it tells us the real value the host menu uses.
+                    Log.LogInfo("Lobby create requested MaxPlayers=" + current +
+                                " (field type " + field.FieldType.Name + ")");
+
                     // 1 = single player, anything below the game's cap = the player chose fewer.
                     if (current < GameDefault) continue;
 
                     int target = MaxPlayers.Value;
                     if (current == target) continue;
 
-                    field.SetValue(arg, target); // arg is the boxed copy for structs
+                    field.SetValue(arg, Convert.ChangeType(target, field.FieldType)); // arg is the boxed copy for structs
                     __args[i] = arg;
                     Log.LogInfo("Lobby MaxPlayers " + current + " -> " + target);
                 }

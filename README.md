@@ -8,21 +8,16 @@ BepInEx plugin that raises the co-op player limit in **Nomad Drive** (ships with
 
 ## Install
 
-**Easy way (recommended):** download `NomadDriveMorePlayers-AllInOne-<version>.zip` from Releases and extract it
-into the game folder, next to the game `.exe`. Launch the game from Steam. Done.
+This is the plugin only. Nomad Drive needs two things before any BepInEx mod can load:
 
-It contains BepInEx 5.4.23.5, a set of unstripped Unity core libraries (see below) and this plugin.
-No game file is modified.
+1. **BepInEx 5.4.23.5, x64** from https://github.com/BepInEx/BepInEx/releases/tag/v5.4.23.5. Extract it next to the game `.exe` and launch from Steam.
+2. **Unstripped Unity core libraries.** The game (Unity 6000.0.73) ships a stripped `mscorlib.dll` without `Module.GetPEKind`, so
+   BepInEx crashes at start (you only get a `preloader_*.log`). Download https://unity.bepinex.dev/corlibs/6000.0.73.zip
+   and extract it into `<Game>_Data/Managed/`, overwriting. Back up the originals first. If the game updates its Unity
+   version, use the matching `https://unity.bepinex.dev/corlibs/<version>.zip`.
+3. Unzip this mod's release into the game folder (it contains `BepInEx/plugins/NomadDriveMorePlayers/`).
 
-Check `BepInEx/LogOutput.log` for lines like `Lobby MaxPlayers 4 -> 6`.
-
-**Why the extra files?** The game is Unity 6000.0.73 and its `mscorlib.dll` is stripped (it lacks
-`Module.GetPEKind`), so BepInEx crashes on start with no log. Both BepInEx 5 and 6 need that method, so a different
-BepInEx version does not help. The zip ships the matching unstripped libraries in `BepInEx/unstripped_corlibs` and
-`doorstop_config.ini` points Mono at them.
-
-**Manual way:** if you already have a working BepInEx 5, use the plain `NomadDriveMorePlayers-<version>.zip`.
-It only contains the plugin.
+Check `BepInEx/LogOutput.log` for `Lobby MaxPlayers 4 -> 6` and `Mirror maxConnections 4 -> 6`.
 
 ## Config
 
