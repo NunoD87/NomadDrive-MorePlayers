@@ -54,8 +54,9 @@ jobs:
           grep -q 'unstripped_corlibs' doorstop_config.ini
           rm bepinex.zip corlibs.zip
           cp -r "$ROOT/pkg/BepInEx/plugins" BepInEx/
-          zip -rq "$ROOT/NomadDriveMorePlayers-AllInOne-${VERSION}.zip" .
-          ls -la "$ROOT"/*.zip
+          OUT="$ROOT/NomadDriveMorePlayers-AllInOne-${VERSION}.zip"
+          zip -r "$OUT" . | tail -3
+          echo "pwd=$PWD out=$OUT"; ls -la "$ROOT" | head -30
           echo "AIO_ZIP=NomadDriveMorePlayers-AllInOne-${VERSION}.zip" >> "$GITHUB_ENV"
 
       - uses: actions/upload-artifact@v4
