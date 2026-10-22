@@ -67,7 +67,7 @@ How it was found: the playtest assemblies show the limit in four places, and the
 
 The game's types are reached through reflection, so this repository contains no game files.
 
-> **Status: v0.x. Tested on the Nomad Drive Early Access Playtest (Unity 6000.0.73) with up to 4 players. Larger lobbies, seats and spawns are still being tested.**
+> **Status: v0.x. Tested on the Nomad Drive Early Access Playtest (Unity 6000.0.73) with a 6-player lobby, mod on the host only. Everyone joined and played; minor rendering glitches and small desyncs were seen, nothing that stops gameplay. 7 and 8 players are not tested yet.**
 
 <p align="right">(<a href="#readme-top">back to top</a>)</p>
 
@@ -137,16 +137,15 @@ Mirror maxConnections 4 -> 8
 | `DefaultPlayers` | `6` | Where the slider starts, and the lobby size when a lobby is made without the slider (for example turning a single-player world into multiplayer) |
 | `VerboseLog` | `false` | Log every patched call |
 
-**Who needs the mod?** The slider, the lobby size and the connection cap are all decided by the host, so in theory only the host.
-This is **not confirmed yet**. If a friend without the mod has problems (UI, seats), install it on their PC too.
+**Who needs the mod?** Only the host. The slider, the lobby size and the connection cap are all decided by the host. In testing, a 6-player lobby with the mod on the host only worked: players without the mod saw the lobby and joined normally.
 
 <p align="right">(<a href="#readme-top">back to top</a>)</p>
 
 ## Known Limits
 
-- The game's loot and economy scaling is clamped to 8 players. Above 8 it stays at the 8-player level.
-- The RV has a fixed number of seat slots. Extra players may have no seat. Under investigation.
-- Player spawn points and the player list UI may assume 4 players.
+- Tested with 6 players. 7 and 8 are allowed but untested; 9 to 12 (config only) are untested territory.
+- Minor rendering glitches and small desyncs were reported in a 6-player session. Gameplay was not affected.
+- The game's loot and economy scaling is clamped to 8 players. Above 8 it stays at the 8-player level. Supply amounts can be tuned in the game's lobby settings.
 - Playtest and release builds can differ. A game update can break the patches. The plugin logs an error if it cannot find the expected types.
 
 <p align="right">(<a href="#readme-top">back to top</a>)</p>
@@ -155,9 +154,10 @@ This is **not confirmed yet**. If a friend without the mod has problems (UI, sea
 
 - [x] Raise the lobby size (EOS) and the connection cap (Mirror)
 - [x] Raise the Create Game player slider
-- [ ] Confirm that a client without the mod can join a 5+ player lobby
-- [ ] Seats for players 5 and up
-- [ ] Spawn points and player list for more than 4 players
+- [x] Confirm that clients without the mod can join a 5+ player lobby (host-only works)
+- [x] Seats, spawns and the player list with 6 players
+- [ ] Test 7 and 8 players
+- [ ] Save and load a multiplayer world
 - [ ] Re-check against the 27 Oct 2026 release build
 - [ ] v1.0.0 stable release
 
